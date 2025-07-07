@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+websockets
+python-multipart
+cantools
+pandas
+pyserial

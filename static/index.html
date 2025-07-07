@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>주행 상황 모니터링</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    .top-right { position: absolute; top: 20px; right: 20px; text-align: right; }
+    .checkbox-group { margin-bottom: 10px; }
+    label { margin-right: 10px; }
+    #plot-title h1 {
+      font-size: 32px;
+      margin-bottom: 5px;
+    }
+    #event-title {
+      text-align: center;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+    #event-title h2 {
+      font-size: 32px;
+      margin: 0;
+      color: black;
+    }
+    
+    /* 재생 속도 버튼 스타일 */
+    .speed-btn {
+      margin: 0 5px;
+      padding: 5px 10px;
+      border: 1px solid #ccc;
+      background: #f8f9fa;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    
+    .speed-btn:hover {
+      background: #e9ecef;
+    }
+    
+    .speed-btn.active {
+      background: #007bff;
+      color: white;
+      border-color: #007bff;
+    }
+    
+    #play-pause-btn {
+      margin-left: 15px;
+      padding: 5px 15px;
+      border: 1px solid #28a745;
+      background: #28a745;
+      color: white;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    
+    #play-pause-btn:hover {
+      background: #218838;
+    }
+    
+    #play-pause-btn.paused {
+      background: #dc3545;
+      border-color: #dc3545;
+    }
+    
+    #play-pause-btn.paused:hover {
+      background: #c82333;
+    }
+  </style>
+</head>
+<body>
+  <!-- ✅ 타이틀 -->
+  <div id="plot-title"><h1>🚗 주행 상황 모니터링</h1></div>
+
+  <!-- ✅ 오른쪽 상단 버튼 -->
+  <div class="top-right">
+    <form id="upload-form" enctype="multipart/form-data" style="display:inline;">
+      <input type="file" name="file" accept=".csv" required>
+      <button type="submit">📤 업로드</button>
+    </form>
+    <button onclick="toggleLogging(true)">🔴 로깅 시작</button>
+    <button onclick="toggleLogging(false)">⏹️ 로깅 종료</button>
+  </div>
+
+  <!-- ✅ 신호 체크박스 -->
+  <div class="checkbox-group">
+    <strong>📈 Signals:</strong>
+    <label><input type="checkbox" class="sig" value="SPEED" checked> SPEED</label>
+    <label><input type="checkbox" class="sig" value="ACCELERATOR_PEDAL_PRESSED" checked> ACCELERATOR_PEDAL_PRESSED (×20)</label>
+    <label><input type="checkbox" class="sig" value="BRAKE_PRESSED" checked> BRAKE_PRESSED (×20)</label>
+    <label><input type="checkbox" class="sig" value="BRAKE_PRESSURE" checked> BRAKE_PRESSURE (÷10)</label>
+    <label><input type="checkbox" class="sig" value="STEERING_ANGLE_2" checked> STEERING_ANGLE_2 (÷30)</label>
+    <label><input type="checkbox" class="sig" value="STEERING_RATE" checked> STEERING_RATE (÷20)</label>
+    <label><input type="checkbox" class="sig" value="STEERING_COL_TORQUE" checked> STEERING_COL_TORQUE (÷30)</label>
+  </div>
+
+  <!-- ✅ 이벤트 체크박스 -->
+  <div class="checkbox-group">
+    <strong>🚨 Events:</strong>
+    <label style="color:#FF4C4C"><input type="checkbox" class="evt" value="PM" checked> PM(페달 오조작)</label>
+    <label style="color:#AAAAAA"><input type="checkbox" class="evt" value="DD" checked> DD(졸음 운전)</label>
+    <label style="color:#FFA500"><input type="checkbox" class="evt" value="SA" checked> SA(급가속)</label>
+    <label style="color:#007BFF"><input type="checkbox" class="evt" value="SB" checked> SB(급제동)</label>
+    <label style="color:#9933FF"><input type="checkbox" class="evt" value="SH" checked> SH(급조향)</label>
+  </div>
+
+  <!-- ✅ 실시간 이벤트 표시 (차트 위 중앙) -->
+  <div id="event-title"><h2>실시간 주행 상태</h2></div>
+
+  <!-- ✅ 실시간 상태 표시기 -->
+  <div id="status-indicator" style="text-align: center; margin: 10px 0; font-size: 14px; color: #666;">
+    <span id="current-time">시간: --</span> | 
+    <span id="update-interval">업데이트: 0.1초</span> | 
+    <span id="data-points">데이터 포인트: 0</span> | 
+    <span id="logging-time">로깅: --</span> | 
+    <span id="view-mode">뷰: 실시간</span>
+  </div>
+
+  <!-- ✅ 재생 속도 컨트롤 -->
+  <div id="playback-controls" style="text-align: center; margin: 10px 0; display: none;">
+    <strong>🎬 재생 속도:</strong>
+    <button onclick="setPlaybackSpeed(0.25)" class="speed-btn" data-speed="0.25">0.25x</button>
+    <button onclick="setPlaybackSpeed(0.5)" class="speed-btn" data-speed="0.5">0.5x</button>
+    <button onclick="setPlaybackSpeed(1)" class="speed-btn active" data-speed="1">1x</button>
+    <button onclick="setPlaybackSpeed(2)" class="speed-btn" data-speed="2">2x</button>
+    <button onclick="setPlaybackSpeed(5)" class="speed-btn" data-speed="5">5x</button>
+    <button onclick="setPlaybackSpeed(10)" class="speed-btn" data-speed="10">10x</button>
+    <button onclick="togglePlayback()" id="play-pause-btn">⏸️ 일시정지</button>
+  </div>
+
+  <!-- ✅ 그래프 이동 컨트롤 -->
+  <div id="graph-controls" style="text-align: center; margin: 10px 0;">
+    <button onclick="moveGraph(-10)">⏪ 10초 뒤로</button>
+    <button onclick="moveGraph(-5)">⏪ 5초 뒤로</button>
+    <button onclick="moveGraph(5)">5초 앞으로 ⏩</button>
+    <button onclick="moveGraph(10)">10초 앞으로 ⏩</button>
+    <button onclick="resetGraphView()">🔄 실시간으로</button>
+  </div>
+
+  <!-- ✅ 그래프 영역 -->
+  <div id="plot" style="width:100%; height:600px;"></div>
+
+  <script>
+    let socket = null;
+    const buffer = [];
+    const maxWindow = 30;  // 10초에서 30초로 변경
+    const maxPoints = 36000;
+    const sampleInterval = 0.1;  // 0.1초 간격으로 업데이트
+    let initialized = false;
+    const shapes = [];
+    const annotations = [];
+    const eventRanges = {};
+    let activeEvents = new Set();
+    let updateTimer = null;  // 업데이트 타이머
+    let lastUpdateTime = 0;  // 마지막 업데이트 시간
+    let loggingTimer = null;  // 로깅 시간 업데이트 타이머
+    let manualViewMode = false;  // 수동 뷰 모드 (이동 시 활성화)
+    let manualViewRange = null;  // 수동 뷰 범위
+    
+    // 재생 속도 관련 변수
+    let playbackSpeed = 1.0;  // 기본 재생 속도 (1x)
+    let isPlaybackPaused = false;  // 재생 일시정지 상태
+    let isFileMode = false;  // 파일 업로드 모드 여부
+    let fileData = [];  // 업로드된 파일 데이터
+    let currentFileIndex = 0;  // 현재 재생 중인 데이터 인덱스
+    let filePlaybackTimer = null;  // 파일 재생 타이머
+
+    // WebSocket 연결 함수
+    function connectWebSocket() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.close();
+        }
+        
+        socket = new WebSocket("ws://" + location.host + "/ws");
+        
+        socket.onopen = function(event) {
+            console.log("✅ WebSocket 연결됨");
+            document.getElementById("status-indicator").style.color = "#2ca02c";
+        };
+        
+        socket.onclose = function(event) {
+            console.log("❌ WebSocket 연결 끊어짐");
+            document.getElementById("status-indicator").style.color = "#d62728";
+            // 3초 후 재연결 시도
+            setTimeout(connectWebSocket, 3000);
+        };
+        
+        socket.onerror = function(error) {
+            console.error("❌ WebSocket 오류:", error);
+        };
+        
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            processData(data);
+        };
+    }
+
+    // 페이지 로드 시 WebSocket 연결
+    connectWebSocket();
+
+    const signalColors = {
+      SPEED: "#1f77b4",
+      ACCELERATOR_PEDAL_PRESSED: "#ff7f0e",
+      BRAKE_PRESSED: "#2ca02c",
+      BRAKE_PRESSURE: "#d62728",
+      STEERING_ANGLE_2: "#9467bd",
+      STEERING_RATE: "#8c564b",
+      STEERING_COL_TORQUE: "#e377c2"
+    };
+
+    const eventColors = {
+      PM: "#FF4C4C", SA: "#FFA500", SB: "#007BFF",
+      DD: "#AAAAAA", SH: "#9933FF"
+    };
+
+    const eventNames = {
+      PM: "페달 오조작", SA: "급가속", SB: "급제동",
+      DD: "졸음 운전", SH: "급조향"
+    };
+
+    const scaleMap = {
+      SPEED: 1,
+      ACCELERATOR_PEDAL_PRESSED: 20,
+      BRAKE_PRESSED: 20,
+      BRAKE_PRESSURE: 0.1,
+      STEERING_ANGLE_2: 0.03333333333333333,
+      STEERING_RATE: 0.05,
+      STEERING_COL_TORQUE: 0.03333333333333333
+    };
+
+    const scaleSuffix = {
+      SPEED: "",
+      ACCELERATOR_PEDAL_PRESSED: " (×20)",
+      BRAKE_PRESSED: " (×20)",
+      BRAKE_PRESSURE: " (÷10)",
+      STEERING_ANGLE_2: " (÷30)",
+      STEERING_RATE: " (÷20)",
+      STEERING_COL_TORQUE: " (÷30)"
+    };
+
+    function updateEventTitle() {
+      const el = document.querySelector("#event-title h2");
+      if (activeEvents.size === 0) {
+        el.innerText = "실시간 주행 상태";
+        el.style.color = "black";
+      } else {
+        const latest = Array.from(activeEvents).slice(-1)[0];
+        el.innerText = `실시간 주행 상태 (${eventNames[latest]})`;
+        el.style.color = eventColors[latest] || "black";
+      }
+    }
+
+    function updateStatusIndicator() {
+      const currentTimeEl = document.getElementById("current-time");
+      const dataPointsEl = document.getElementById("data-points");
+      const loggingTimeEl = document.getElementById("logging-time");
+      const viewModeEl = document.getElementById("view-mode");
+      
+      if (buffer.length > 0) {
+        const latestTime = buffer[buffer.length - 1].Time;
+        currentTimeEl.textContent = `시간: ${latestTime.toFixed(1)}초`;
+      } else {
+        currentTimeEl.textContent = "시간: --";
+      }
+      
+      dataPointsEl.textContent = `데이터 포인트: ${buffer.length}`;
+
+      // 로깅 시간 표시
+      const startTime = localStorage.getItem("loggingStartTime");
+      if (startTime) {
+        const elapsedTime = (Date.now() - parseInt(startTime)) / 1000;
+        loggingTimeEl.textContent = `로깅: ${elapsedTime.toFixed(1)}초`;
+      } else {
+        loggingTimeEl.textContent = "로깅: --";
+      }
+
+      // 뷰 모드 표시
+      if (manualViewMode && manualViewRange) {
+        viewModeEl.textContent = `뷰: 수동 (${manualViewRange[0].toFixed(1)}~${manualViewRange[1].toFixed(1)}초)`;
+      } else {
+        viewModeEl.textContent = "뷰: 실시간";
+      }
+      
+      // 재생 속도 표시 (파일 모드일 때만)
+      if (isFileMode) {
+        const speedEl = document.getElementById("update-interval");
+        speedEl.textContent = `재생: ${playbackSpeed}x`;
+      }
+    }
+
+    function updatePlot() {
+      if (buffer.length === 0) return;
+
+      const visibleSigs = Array.from(document.querySelectorAll(".sig:checked")).map(cb => cb.value);
+      const visibleEvents = Array.from(document.querySelectorAll(".evt:checked")).map(cb => cb.value);
+      const currentTime = buffer[buffer.length - 1].Time;
+
+      const ongoingShapes = Object.entries(eventRanges).map(([code, range]) => {
+        if (!visibleEvents.includes(code)) return null;
+        return {
+          type: "rect",
+          xref: "x",
+          yref: "paper",
+          x0: range.start,
+          x1: currentTime,
+          y0: 0,
+          y1: 1,
+          fillcolor: eventColors[code] || "gray",
+          opacity: 0.15,
+          line: { width: 0 }
+        };
+      }).filter(Boolean);
+
+      const filteredShapes = shapes.filter(s =>
+        visibleEvents.includes(Object.keys(eventColors).find(code => s.fillcolor === eventColors[code]))
+      );
+
+      const filteredAnnotations = annotations.filter(a =>
+        visibleEvents.includes(Object.keys(eventNames).find(code => a.text === eventNames[code]))
+      );
+
+      let yMin = 0, yMax = 1;
+      const traces = visibleSigs.map(sig => {
+        const scale = scaleMap[sig] || 1;
+        const y = buffer.map(p => (p[sig] ?? 0) * scale);
+        const minY = Math.min(...y);
+        const maxY = Math.max(...y);
+        if (minY < yMin) yMin = minY - 1;
+        if (maxY > yMax) yMax = maxY + 1;
+        return {
+          x: buffer.map(p => p.Time),
+          y,
+          name: sig + (scaleSuffix[sig] || ""),
+          type: 'scatter',
+          mode: 'lines',
+          line: { color: signalColors[sig] || '#000000' }
+        };
+      });
+
+      const layout = {
+        yaxis: { range: [yMin, yMax] },
+        shapes: filteredShapes.concat(ongoingShapes),
+        annotations: filteredAnnotations
+      };
+
+      // 수동 뷰 모드가 아닐 때만 x축 범위를 실시간으로 업데이트
+      if (!manualViewMode) {
+        layout.xaxis = { range: [currentTime - maxWindow, currentTime] };
+      } else if (manualViewRange) {
+        layout.xaxis = { range: manualViewRange };
+      }
+
+      if (!initialized) {
+        Plotly.newPlot("plot", traces, layout);
+        initialized = true;
+      } else {
+        Plotly.react("plot", traces, layout);
+      }
+
+      // 상태 표시기 업데이트
+      updateStatusIndicator();
+    }
+
+    // 0.1초 간격으로 그래프 업데이트하는 함수
+    function scheduleUpdate() {
+      if (updateTimer) {
+        clearTimeout(updateTimer);
+      }
+      updateTimer = setTimeout(() => {
+        updatePlot();
+        scheduleUpdate();  // 다음 업데이트 예약
+      }, sampleInterval * 1000);  // 0.1초를 밀리초로 변환
+    }
+
+    // 로깅 시간 실시간 업데이트 함수
+    function startLoggingTimer() {
+      if (loggingTimer) {
+        clearInterval(loggingTimer);
+      }
+      loggingTimer = setInterval(() => {
+        const startTime = localStorage.getItem("loggingStartTime");
+        if (startTime) {
+          const elapsedTime = (Date.now() - parseInt(startTime)) / 1000;
+          const loggingTimeEl = document.getElementById("logging-time");
+          loggingTimeEl.textContent = `로깅: ${elapsedTime.toFixed(1)}초`;
+        }
+      }, 100);  // 0.1초마다 업데이트
+    }
+
+    function stopLoggingTimer() {
+      if (loggingTimer) {
+        clearInterval(loggingTimer);
+        loggingTimer = null;
+      }
+    }
+
+    // 그래프 뷰 이동 함수
+    function moveGraph(seconds) {
+      if (buffer.length === 0) return;
+      
+      let newXRange;
+      
+      if (manualViewMode && manualViewRange) {
+        // 이미 수동 뷰 모드일 때는 현재 뷰를 기준으로 이동하되 30초 범위 유지
+        const center = (manualViewRange[0] + manualViewRange[1]) / 2 + seconds;
+        newXRange = [center - maxWindow/2, center + maxWindow/2];
+      } else {
+        // 실시간 모드일 때는 현재 시간을 기준으로 이동하되 30초 범위 유지
+        const currentTime = buffer[buffer.length - 1].Time;
+        const center = currentTime + seconds;
+        newXRange = [center - maxWindow/2, center + maxWindow/2];
+      }
+      
+      // 범위가 음수가 되지 않도록 조정
+      if (newXRange[0] < 0) {
+        newXRange[1] = maxWindow;
+        newXRange[0] = 0;
+      }
+      
+      // 수동 뷰 모드 활성화
+      manualViewMode = true;
+      manualViewRange = newXRange;
+      
+      // 버튼 시각적 피드백
+      updateButtonStates();
+      
+      // 즉시 그래프 업데이트
+      updatePlot();
+    }
+
+    // 그래프 뷰 리셋 함수 (실시간 뷰로 복귀)
+    function resetGraphView() {
+      if (buffer.length === 0) return;
+      
+      // 수동 뷰 모드 비활성화
+      manualViewMode = false;
+      manualViewRange = null;
+      
+      // 버튼 시각적 피드백
+      updateButtonStates();
+      
+      // 즉시 그래프 업데이트
+      updatePlot();
+    }
+
+    // 버튼 상태 업데이트 함수
+    function updateButtonStates() {
+      const resetButton = document.querySelector('button[onclick="resetGraphView()"]');
+      if (resetButton) {
+        if (manualViewMode) {
+          resetButton.style.backgroundColor = '#ff6b6b';
+          resetButton.style.color = 'white';
+        } else {
+          resetButton.style.backgroundColor = '';
+          resetButton.style.color = '';
+        }
+      }
+    }
+
+    function processData(data) {
+      // 로깅 시작 시간 정보 처리
+      if (data.logging_start_time) {
+        const startTime = new Date(data.logging_start_time);
+        localStorage.setItem("loggingStartTime", startTime.getTime().toString());
+      }
+      
+      buffer.push(data);
+      if (buffer.length > maxPoints) buffer.shift();
+
+      const currentTime = data.Time;
+      
+      // 이벤트 상태 처리 - CSV 파일의 event 컬럼을 사용
+      if (data.event && data.event !== 'none') {
+        const [code, state] = data.event.split("_");
+        
+        // 현재 활성화된 이벤트와 다른 이벤트가 시작되면 기존 이벤트들을 정리
+        if (state === "on") {
+          // 다른 이벤트가 시작되면 기존 이벤트들을 종료 처리
+          const currentActiveEvents = Object.keys(eventRanges);
+          for (const activeCode of currentActiveEvents) {
+            if (activeCode !== code) {
+              // 기존 이벤트를 현재 시간으로 종료
+              const start = eventRanges[activeCode].start;
+              const end = currentTime;
+              const visibleEvents = Array.from(document.querySelectorAll(".evt:checked")).map(cb => cb.value);
+              if (visibleEvents.includes(activeCode)) {
+                shapes.push({
+                  type: "rect",
+                  xref: "x",
+                  yref: "paper",
+                  x0: start,
+                  x1: end,
+                  y0: 0,
+                  y1: 1,
+                  fillcolor: eventColors[activeCode] || "gray",
+                  opacity: 0.2,
+                  line: { width: 0 }
+                });
+              }
+              delete eventRanges[activeCode];
+              activeEvents.delete(activeCode);
+            }
+          }
+          
+          // 새 이벤트 시작
+          if (!eventRanges[code]) {
+            eventRanges[code] = { start: currentTime };
+            activeEvents.add(code);
+
+            const visibleEvents = Array.from(document.querySelectorAll(".evt:checked")).map(cb => cb.value);
+            if (visibleEvents.includes(code)) {
+              annotations.push({
+                x: currentTime + 0.1,
+                y: 1,
+                xref: "x",
+                yref: "paper",
+                text: eventNames[code] || code,
+                showarrow: false,
+                font: {
+                  size: 14,
+                  color: eventColors[code] || "black"
+                },
+                align: "left",
+                yanchor: "bottom"
+              });
+            }
+          }
+        } else if (state === "off" && eventRanges[code]) {
+          // 이벤트 종료
+          const start = eventRanges[code].start;
+          const end = currentTime;
+          const visibleEvents = Array.from(document.querySelectorAll(".evt:checked")).map(cb => cb.value);
+          if (visibleEvents.includes(code)) {
+            shapes.push({
+              type: "rect",
+              xref: "x",
+              yref: "paper",
+              x0: start,
+              x1: end,
+              y0: 0,
+              y1: 1,
+              fillcolor: eventColors[code] || "gray",
+              opacity: 0.2,
+              line: { width: 0 }
+            });
+          }
+          delete eventRanges[code];
+          activeEvents.delete(code);
+        }
+        updateEventTitle();
+      } else if (data.event === 'none') {
+        // 이벤트가 none이면 모든 활성 이벤트를 종료
+        const currentActiveEvents = Object.keys(eventRanges);
+        for (const activeCode of currentActiveEvents) {
+          const start = eventRanges[activeCode].start;
+          const end = currentTime;
+          const visibleEvents = Array.from(document.querySelectorAll(".evt:checked")).map(cb => cb.value);
+          if (visibleEvents.includes(activeCode)) {
+            shapes.push({
+              type: "rect",
+              xref: "x",
+              yref: "paper",
+              x0: start,
+              x1: end,
+              y0: 0,
+              y1: 1,
+              fillcolor: eventColors[activeCode] || "gray",
+              opacity: 0.2,
+              line: { width: 0 }
+            });
+          }
+          delete eventRanges[activeCode];
+          activeEvents.delete(activeCode);
+        }
+        updateEventTitle();
+      }
+
+      // 0.1초 간격으로 업데이트 스케줄링
+      if (!updateTimer) {
+        scheduleUpdate();
+      }
+    }
+
+    // 체크박스 변경 시 그래프 업데이트
+    document.querySelectorAll(".sig, .evt").forEach(cb => {
+      cb.addEventListener("change", updatePlot);
+    });
+
+    // 파일 업로드 처리
+    document.getElementById("upload-form").addEventListener("submit", function(e) {
+      e.preventDefault();
+      const formData = new FormData(this);
+      
+      // WebSocket 연결 상태 확인
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        alert("⚠️ 브라우저 연결이 필요합니다. 페이지를 새로고침 후 다시 시도해주세요.");
+        return;
+      }
+      
+      // 업로드 시작 시 즉시 기존 데이터 초기화
+      buffer.length = 0;  // 배열 초기화
+      shapes.length = 0;  // 배열 초기화
+      annotations.length = 0;  // 배열 초기화
+      Object.keys(eventRanges).forEach(key => delete eventRanges[key]);  // 객체 초기화
+      activeEvents.clear();
+      
+      // 수동 뷰 모드 리셋
+      manualViewMode = false;
+      manualViewRange = null;
+      
+      // 그래프 초기화
+      if (initialized) {
+        Plotly.newPlot("plot", [], {
+          xaxis: { range: [0, maxWindow] },
+          yaxis: { range: [0, 1] }
+        });
+      }
+      
+      // 이벤트 타이틀 초기화
+      updateEventTitle();
+      
+      // 상태 표시기 업데이트
+      updateStatusIndicator();
+      
+      console.log("📤 파일 업로드 시작...");
+      
+      fetch("/upload", {
+        method: "POST",
+        body: formData
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();  // JSON 응답으로 변경
+      })
+      .then(result => {
+        console.log("Upload result:", result);
+        if (result.success) {
+          // 파일 모드 활성화
+          isFileMode = true;
+          fileData = result.data || [];
+          currentFileIndex = 0;
+          
+          // 재생 컨트롤 표시
+          document.getElementById("playback-controls").style.display = "block";
+          
+          // 재생 시작
+          restartFilePlayback();
+          
+          alert("✅ 파일 업로드 완료! 재생을 시작합니다.");
+          // 폼 리셋
+          this.reset();
+        } else {
+          alert("업로드 실패: " + (result.message || "알 수 없는 오류"));
+        }
+      })
+      .catch(error => {
+        console.error("Upload error:", error);
+        alert("업로드 실패: " + error.message);
+      });
+    });
+
+    // 로깅 토글 함수
+    function toggleLogging(start) {
+      const endpoint = start ? "/start_logging" : "/stop_logging";
+      fetch(endpoint, { method: "POST" })
+        .then(response => response.text())
+        .then(result => {
+          alert(result);
+          if (start && result.includes("✅")) {
+            // 로깅 시작 시 현재 시간을 로컬 스토리지에 저장
+            localStorage.setItem("loggingStartTime", Date.now().toString());
+            startLoggingTimer();  // 로깅 타이머 시작
+          } else if (!start && result.includes("🛑")) {
+            // 로깅 종료 시 로컬 스토리지에서 제거
+            localStorage.removeItem("loggingStartTime");
+            stopLoggingTimer();  // 로깅 타이머 중지
+            const loggingTimeEl = document.getElementById("logging-time");
+            loggingTimeEl.textContent = "로깅: --";
+          }
+          // 상태 표시기 업데이트
+          updateStatusIndicator();
+        })
+        .catch(error => {
+          console.error("Error:", error);
+          alert("로깅 토글 실패");
+        });
+    }
+
+    // 재생 속도 설정 함수
+    function setPlaybackSpeed(speed) {
+      playbackSpeed = speed;
+      
+      // 버튼 상태 업데이트
+      document.querySelectorAll('.speed-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.querySelector(`[data-speed="${speed}"]`).classList.add('active');
+      
+      // 상태 표시기 업데이트
+      updateStatusIndicator();
+      
+      // 파일 모드에서 재생 중이면 타이머 재설정
+      if (isFileMode && !isPlaybackPaused) {
+        startFilePlayback();
+      }
+    }
+    
+    // 재생/일시정지 토글 함수
+    function togglePlayback() {
+      if (!isFileMode) return;
+      
+      isPlaybackPaused = !isPlaybackPaused;
+      const btn = document.getElementById('play-pause-btn');
+      
+      if (isPlaybackPaused) {
+        btn.textContent = '▶️ 재생';
+        btn.classList.add('paused');
+        if (filePlaybackTimer) {
+          clearTimeout(filePlaybackTimer);
+          filePlaybackTimer = null;
+        }
+      } else {
+        btn.textContent = '⏸️ 일시정지';
+        btn.classList.remove('paused');
+        startFilePlayback();
+      }
+    }
+    
+    // 파일 재생 시작 함수
+    function startFilePlayback() {
+      if (!isFileMode || isPlaybackPaused || currentFileIndex >= fileData.length) {
+        return;
+      }
+      
+      if (filePlaybackTimer) {
+        clearTimeout(filePlaybackTimer);
+      }
+      
+      filePlaybackTimer = setTimeout(() => {
+        if (currentFileIndex < fileData.length) {
+          processData(fileData[currentFileIndex]);
+          currentFileIndex++;
+          startFilePlayback();  // 다음 데이터 재생
+        } else {
+          // 재생 완료
+          console.log("🎬 파일 재생 완료");
+          isPlaybackPaused = true;
+          const btn = document.getElementById('play-pause-btn');
+          btn.textContent = '🔄 다시 재생';
+          btn.classList.add('paused');
+        }
+      }, (sampleInterval * 1000) / playbackSpeed);  // 재생 속도 적용
+    }
+    
+    // 파일 재생 재시작 함수
+    function restartFilePlayback() {
+      if (!isFileMode) return;
+      
+      currentFileIndex = 0;
+      isPlaybackPaused = false;
+      
+      // 데이터 초기화
+      buffer.length = 0;
+      shapes.length = 0;
+      annotations.length = 0;
+      Object.keys(eventRanges).forEach(key => delete eventRanges[key]);
+      activeEvents.clear();
+      
+      // 그래프 초기화
+      if (initialized) {
+        Plotly.newPlot("plot", [], {
+          xaxis: { range: [0, maxWindow] },
+          yaxis: { range: [0, 1] }
+        });
+      }
+      
+      // 재생 시작
+      const btn = document.getElementById('play-pause-btn');
+      btn.textContent = '⏸️ 일시정지';
+      btn.classList.remove('paused');
+      
+      startFilePlayback();
+    }
+    
+    // 페이지 종료 시 서버 종료
+    window.addEventListener("beforeunload", function() {
+      if (updateTimer) {
+        clearTimeout(updateTimer);
+      }
+      if (loggingTimer) {
+        clearInterval(loggingTimer);
+      }
+      if (filePlaybackTimer) {
+        clearTimeout(filePlaybackTimer);
+      }
+      fetch("/shutdown", { method: "POST" });
+    });
+
+    // 키보드 단축키 추가
+    document.addEventListener("keydown", function(event) {
+      switch(event.key) {
+        case "ArrowLeft":
+          event.preventDefault();
+          moveGraph(-5);
+          break;
+        case "ArrowRight":
+          event.preventDefault();
+          moveGraph(5);
+          break;
+        case "Home":
+          event.preventDefault();
+          resetGraphView();
+          break;
+        case "PageUp":
+          event.preventDefault();
+          moveGraph(-10);
+          break;
+        case "PageDown":
+          event.preventDefault();
+          moveGraph(10);
+          break;
+        case "a":
+        case "A":
+          event.preventDefault();
+          moveGraph(-30);
+          break;
+        case "d":
+        case "D":
+          event.preventDefault();
+          moveGraph(30);
+          break;
+        case " ":
+          event.preventDefault();
+          if (isFileMode) {
+            togglePlayback();
+          }
+          break;
+        case "1":
+          if (isFileMode) {
+            event.preventDefault();
+            setPlaybackSpeed(0.25);
+          }
+          break;
+        case "2":
+          if (isFileMode) {
+            event.preventDefault();
+            setPlaybackSpeed(0.5);
+          }
+          break;
+        case "3":
+          if (isFileMode) {
+            event.preventDefault();
+            setPlaybackSpeed(1);
+          }
+          break;
+        case "4":
+          if (isFileMode) {
+            event.preventDefault();
+            setPlaybackSpeed(2);
+          }
+          break;
+        case "5":
+          if (isFileMode) {
+            event.preventDefault();
+            setPlaybackSpeed(5);
+          }
+          break;
+        case "6":
+          if (isFileMode) {
+            event.preventDefault();
+            setPlaybackSpeed(10);
+          }
+          break;
+        case "r":
+        case "R":
+          if (isFileMode) {
+            event.preventDefault();
+            restartFilePlayback();
+          }
+          break;
+      }
+    });
+  </script>
+</body>
+</html>
