@@ -137,11 +137,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 if last_sent_time != current_time:
                     await websocket.send_json(to_jsonable(latest_data))
                     last_sent_time = current_time
-                    print(f"📊 웹소켓 데이터 전송: Time={current_time}, 이벤트={latest_data.get('event', 'none')}")
+            
             else:
                 # 20번마다 한 번씩 상태 출력
                 if check_count % 20 == 0:
-                    print(f"🔍 웹소켓 체크 중... (데이터 없음, {check_count}번째)")
+                    pass
                     
     except Exception as e:
         print(f"INFO: connection closed - {e}")

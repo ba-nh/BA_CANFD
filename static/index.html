@@ -88,9 +88,9 @@
     <label><input type="checkbox" class="sig" value="ACCELERATOR_PEDAL_PRESSED" checked> ACCELERATOR_PEDAL_PRESSED (×20)</label>
     <label><input type="checkbox" class="sig" value="BRAKE_PRESSED" checked> BRAKE_PRESSED (×20)</label>
     <label><input type="checkbox" class="sig" value="BRAKE_PRESSURE" checked> BRAKE_PRESSURE (÷10)</label>
-    <label><input type="checkbox" class="sig" value="STEERING_ANGLE_2" checked> STEERING_ANGLE_2 (÷30)</label>
+    <label><input type="checkbox" class="sig" value="STEERING_ANGLE_2" checked> STEERING_ANGLE_2 (÷10)</label>
     <label><input type="checkbox" class="sig" value="STEERING_RATE" checked> STEERING_RATE (÷20)</label>
-    <label><input type="checkbox" class="sig" value="STEERING_COL_TORQUE" checked> STEERING_COL_TORQUE (÷30)</label>
+    <label><input type="checkbox" class="sig" value="STEERING_COL_TORQUE" checked> STEERING_COL_TORQUE (÷10)</label>
   </div>
 
   <!-- ✅ 이벤트 체크박스 -->
@@ -222,9 +222,9 @@
       ACCELERATOR_PEDAL_PRESSED: 20,
       BRAKE_PRESSED: 20,
       BRAKE_PRESSURE: 0.1,
-      STEERING_ANGLE_2: 0.03333333333333333,
+      STEERING_ANGLE_2: 0.1,
       STEERING_RATE: 0.05,
-      STEERING_COL_TORQUE: 0.03333333333333333
+      STEERING_COL_TORQUE: 0.1
     };
 
     const scaleSuffix = {
@@ -232,9 +232,9 @@
       ACCELERATOR_PEDAL_PRESSED: " (×20)",
       BRAKE_PRESSED: " (×20)",
       BRAKE_PRESSURE: " (÷10)",
-      STEERING_ANGLE_2: " (÷30)",
+      STEERING_ANGLE_2: " (÷10)",
       STEERING_RATE: " (÷20)",
-      STEERING_COL_TORQUE: " (÷30)"
+      STEERING_COL_TORQUE: " (÷10)"
     };
 
     function updateEventTitle() {

@@ -142,24 +142,21 @@ class EventDetector:
         if self.timer['SB_off_wait'] >= 0.3:
             triggers.append('SB_off')
 
-        # DD - 졸음운전 (시간 기준으로 수정)
-        if v >= 6 and not a and not b:
-            # 최근 3초 동안의 데이터 확인
-            recent_data = self.get_recent_data_by_time(3.0)
-            if len(recent_data) >= 10:  # 최소 10개 샘플 이상
-                torque_range = max(h['torque'] for h in recent_data) - min(h['torque'] for h in recent_data)
-                angle_range = max(h['angle'] for h in recent_data) - min(h['angle'] for h in recent_data)
-                if torque_range < 1.0 and angle_range < 3.0:
-                    self.update('DD_hold', dt, True)
-                    if self.timer['DD_hold'] >= 3.0:
-                        triggers.append('DD_on')
-                else:
-                    self.timer['DD_hold'] = 0
+        # DD - 졸음운전 (간단한 카운트 방식)
+        # 졸음운전 조건: 속도≥6, 가속/브레이크 안밟음, 조향 변화 적음, 조향 속도 적음
+        dd_condition_met = (v >= 6 and not a and not b and 
+                           abs(tq) < 1.0 and abs(ang) < 3.0 and abs(rate) < 30)
+        
+        if dd_condition_met:
+            self.update('DD_count', dt, True)
+            if self.timer['DD_count'] >= 3.0:  # 3초(30회) 이상 조건 만족
+                triggers.append('DD_on')
         else:
+            # 조건이 만족되지 않으면 카운트 리셋
+            self.timer['DD_count'] = 0
             self.update('DD_off_wait', dt, a == 1 or b == 1)
             if self.timer['DD_off_wait'] >= 0.3:
                 triggers.append('DD_off')
-            self.timer['DD_hold'] = 0
 
         # SH - 급조향 (시간 기준으로 수정)
         if v >= 6 and abs(rate) >= 100:

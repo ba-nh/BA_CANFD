@@ -68,7 +68,6 @@ class MonitorCore:
         # 연속된 0xEA 신호 체크
         current_ea_data = str(decoded_data)
         if self.last_ea_data == current_ea_data:
-            print(f"⚠️ 연속된 0xEA 신호 무시: {current_ea_data[:50]}...")
             return False  # 연속된 신호는 무시
         
         self.last_ea_data = current_ea_data
@@ -82,7 +81,6 @@ class MonitorCore:
             # 대시보드용 메모리에 최신 데이터 저장 (빠른 접근용)
             with self.dashboard_data_lock:
                 self.latest_data_for_dashboard = processed.copy()
-                print(f"💾 대시보드 메모리 저장: Time={processed.get('Time', 0)}, 이벤트={processed.get('event', 'none')}")
             
             # CSV 버퍼에 추가
             self.add_to_csv_buffer(processed)
@@ -99,8 +97,6 @@ class MonitorCore:
                 # _on 접미사 제거
                 event_name = event.replace('_on', '')
                 print(f"🚨 이벤트 감지! 시간: {self.time_counter * 0.1:.1f}s, 이벤트: {event_name}")
-            else:
-                print(f"✅ 시간대 처리 완료: {self.time_counter * 0.1:.1f}s, 이벤트: {event}")
         
         self.time_counter += 1
         # 새로운 시간대 시작 (이전 데이터 복사)
@@ -170,8 +166,7 @@ class MonitorCore:
         with open(self.csv_filename, 'w', encoding='utf-8') as f:
             f.writelines(adjusted_lines)
         
-        print(f"📊 CSV 헤더 업데이트: {len(header_parts)}개 컬럼")
-        print(f"📊 컬럼 순서: {', '.join(header_parts)}")
+
 
     def add_can_data(self, can_id, decoded_data):
         """CAN 데이터를 현재 시간대에 추가 - 모든 해석된 데이터 저장"""
@@ -188,7 +183,6 @@ class MonitorCore:
             # 새로운 신호가 들어오면 알림 (값 설정 전에 체크)
             if key not in self.current_time_data:
                 new_columns_added = True
-                print(f"📊 새로운 신호 발견: {key}")
             
             try:
                 # 숫자로 변환 가능하면 숫자로, 아니면 문자열로 저장
@@ -243,9 +237,6 @@ class MonitorCore:
             f.write(header)
         
         print(f"📁 CSV 로깅 시작: {self.csv_filename}")
-        print(f"📊 초기 컬럼: Time, event, trigger")
-        print(f"📊 추가 신호는 실제 데이터에 따라 동적으로 추가됩니다.")
-        print(f"📊 Time 기준으로 0.1초마다 저장")
 
     def add_to_csv_buffer(self, row):
         """CSV 버퍼에 데이터 추가 - 실제 들어오는 모든 신호를 동적으로 저장"""
@@ -288,7 +279,7 @@ class MonitorCore:
                 for row_data in self.csv_data_buffer:
                     f.write(row_data + '\n')
             
-            print(f"💾 Time 기준 CSV 저장 완료: {len(self.csv_data_buffer)}개 데이터")
+
             self.csv_data_buffer.clear()
 
     def stop_csv_logging(self):
@@ -303,13 +294,12 @@ class MonitorCore:
                     for row_data in self.csv_data_buffer:
                         f.write(row_data + '\n')
                 
-                print(f"💾 최종 CSV 저장 완료: {len(self.csv_data_buffer)}개 데이터")
+
                 self.csv_data_buffer.clear()
         
         # 로깅 시간 계산
         if self.logging_start_time:
             duration = (datetime.datetime.now() - self.logging_start_time).total_seconds()
-            print(f"📊 총 로깅 시간: {duration:.1f}초")
             print(f"📁 저장된 파일: {self.csv_filename}")
 
     def get_latest_data_for_dashboard(self):
